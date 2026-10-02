@@ -47,11 +47,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
@@ -70,6 +74,7 @@ fun LoginTracScreen(
     onForgotPasswordClick: () -> Unit = {}
 ) {
     val isPreview = LocalInspectionMode.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     var emailOrStudentId by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
@@ -251,7 +256,8 @@ fun LoginTracScreen(
                     TracTextField(
                         value = emailOrStudentId,
                         onValueChange = { emailOrStudentId = it },
-                        placeholder = "enter your email address..."
+                        placeholder = "enter your email address...",
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
                     )
                 }
 
@@ -295,6 +301,11 @@ fun LoginTracScreen(
                         placeholder = "••••••••",
                         isPassword = true,
                         isPasswordVisible = isPasswordVisible,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            keyboardController?.hide()
+                            onLoginClick(emailOrStudentId, password)
+                        }),
                         onTogglePasswordVisibility = { isPasswordVisible = !isPasswordVisible }
                     )
                 }
@@ -302,7 +313,10 @@ fun LoginTracScreen(
                 Spacer(modifier = Modifier.height(32.dp))
 
                 Button(
-                    onClick = { onLoginClick(emailOrStudentId, password) },
+                    onClick = {
+                        keyboardController?.hide()
+                        onLoginClick(emailOrStudentId, password)
+                    },
                     enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -407,6 +421,8 @@ fun TracTextField(
     isPassword: Boolean = false,
     isPasswordVisible: Boolean = false,
     isDarkMode: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
     onTogglePasswordVisibility: () -> Unit = {}
 ) {
     val cardBg = if (isDarkMode) Color(0xFF1E293B) else Color.White
@@ -452,6 +468,8 @@ fun TracTextField(
                         fontWeight = FontWeight.Medium,
                         color = textPrimary
                     ),
+                    keyboardOptions = keyboardOptions,
+                    keyboardActions = keyboardActions,
                     visualTransformation = if (isPassword && !isPasswordVisible) PasswordVisualTransformation() else VisualTransformation.None,
                     modifier = Modifier.fillMaxWidth()
                 )

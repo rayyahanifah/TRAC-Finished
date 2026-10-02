@@ -74,14 +74,17 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.trac.data.FacilityLocation
 import com.example.trac.data.ReportData
+import com.example.trac.data.ReportRepository
 import com.example.trac.data.SchoolFacilityMasterData
 import com.example.trac.data.SessionPreferences
 import com.example.trac.data.StaffMember
+import com.example.trac.data.UserProfileData
 import com.example.trac.util.ImageUtils
 import kotlinx.coroutines.launch
 
@@ -123,6 +126,7 @@ fun AdminDashboardTracScreen(
     isIndonesian: Boolean = true,
     isDarkMode: Boolean = false,
     reportsList: List<ReportData> = emptyList(),
+    registeredUsers: List<UserProfileData> = emptyList(),
     selectedReportInitial: ReportData? = null,
     onBackToUserModeClick: () -> Unit = {},
     onUpdateReportStatus: (reportId: String, newStatus: String, completionImageUrl: String?, completionNotes: String?) -> Unit = { _, _, _, _ -> },
@@ -147,27 +151,118 @@ fun AdminDashboardTracScreen(
 
     val context = LocalContext.current
     val sessionPrefs = remember { SessionPreferences(context) }
+    val reportRepo = remember { ReportRepository() }
+    val coroutineScope = rememberCoroutineScope()
     var staffList by remember { mutableStateOf(sessionPrefs.getStaffList()) }
 
-    // Real school facility locations across all 4 floors
+    // Real school facility locations across all 4 floors loaded from persistent storage
     var facilityLocations by remember {
-        mutableStateOf(SchoolFacilityMasterData.defaultLocations)
+        mutableStateOf(sessionPrefs.getFacilityLocations())
     }
 
-    // Student Reporters List
-    val studentReporters = remember {
-        listOf(
-            StudentReporter("USR-101", "rompis", "XI RPL", "rompisjosh@gmail.com", 8, 6),
-            StudentReporter("USR-102", "Rayya Al-Fatih", "XI RPL", "rayya@gmail.com", 4, 3),
-            StudentReporter("USR-103", "Joshua Benjamin", "XI RPL", "joshua@gmail.com", 5, 5),
-            StudentReporter("USR-104", "Kevin Sanjaya", "XI TKJ", "kevin@gmail.com", 3, 2),
-            StudentReporter("USR-105", "Nadya Putri", "XII RPL", "nadya@gmail.com", 2, 1),
-            StudentReporter("USR-106", "Dimas Anggara", "X RPL 1", "dimas@gmail.com", 4, 2)
-        )
+    var currentAdminEmails by remember(adminEmails) {
+        mutableStateOf(HashSet(adminEmails))
     }
 
     // Dynamic Admin Notifications synced with live reports & persistent read tracking
-    var readAdminNotifIds by remember { mutableStateOf(sessionPrefs.getReadAdminNotificationIds()) }
+    var readAdminNotifIds by remember { mutableStateOf(HashSet(sessionPrefs.getReadAdminNotificationIds())) }
+
+    // Remote sync with Supabase on screen load
+    LaunchedEffect(Unit) {
+        reportRepo.getStaffList().onSuccess { remoteStaff ->
+            if (remoteStaff.isNotEmpty()) {
+                staffList = remoteStaff
+                sessionPrefs.saveStaffList(remoteStaff)
+            }
+        }
+        reportRepo.getFacilityLocations().onSuccess { remoteLocs ->
+            if (remoteLocs.isNotEmpty()) {
+                facilityLocations = remoteLocs
+                sessionPrefs.saveFacilityLocations(remoteLocs)
+            }
+        }
+        reportRepo.getReadNotificationIds().onSuccess { remoteReadIds ->
+            if (remoteReadIds.isNotEmpty()) {
+                sessionPrefs.markAllAdminNotificationsAsRead(remoteReadIds)
+                readAdminNotifIds = HashSet(sessionPrefs.getReadAdminNotificationIds())
+            }
+        }
+    }
+
+    // Dynamic Student Reporters List aggregated from registered users and submitted reports
+    val studentReporters = remember(registeredUsers, reportsList) {
+        val userMap = mutableMapOf<String, StudentReporter>()
+
+        // 1. Seed base default accounts
+        val defaultSeed = listOf(
+            StudentReporter("USR-101", "rompis", "XI RPL", "rompisjosh@gmail.com", 0, 0),
+            StudentReporter("USR-102", "Rayya Hanifah", "XI RPL", "rayyahanifah@gmail.com", 0, 0),
+            StudentReporter("USR-103", "Joshua Benjamin", "XI RPL", "joshua@gmail.com", 0, 0),
+            StudentReporter("USR-104", "Kevin Sanjaya", "XI TKJ", "kevin@gmail.com", 0, 0)
+        )
+        defaultSeed.forEach { userMap[it.email.trim().lowercase()] = it }
+
+        // 2. Add local cached registered users
+        sessionPrefs.getRegisteredUsers().forEach { u ->
+            val cleanEmail = u.email.trim().lowercase()
+            userMap[cleanEmail] = StudentReporter(
+                id = if (u.userId.isNotBlank()) u.userId else "USR-${cleanEmail.replace("@", "_").replace(".", "_")}",
+                name = u.fullName,
+                className = u.userClass,
+                email = u.email,
+                totalReports = 0,
+                resolvedReports = 0
+            )
+        }
+
+        // 3. Add remote registered users
+        registeredUsers.forEach { u ->
+            val cleanEmail = u.email.trim().lowercase()
+            userMap[cleanEmail] = StudentReporter(
+                id = if (u.userId.isNotBlank()) u.userId else "USR-${cleanEmail.replace("@", "_").replace(".", "_")}",
+                name = u.fullName,
+                className = u.userClass,
+                email = u.email,
+                totalReports = 0,
+                resolvedReports = 0
+            )
+        }
+
+        // 4. Discover reporters who submitted reports
+        reportsList.forEach { r ->
+            val author = r.userName?.trim()
+            if (!author.isNullOrBlank()) {
+                val candidateEmail = if (author.contains("@")) author.lowercase() else "${author.lowercase().replace(" ", "")}@gmail.com"
+                if (!userMap.containsKey(candidateEmail)) {
+                    userMap[candidateEmail] = StudentReporter(
+                        id = if (!r.userId.isNullOrBlank()) r.userId else "USR-${candidateEmail.replace("@", "_").replace(".", "_")}",
+                        name = author,
+                        className = "XI RPL",
+                        email = candidateEmail,
+                        totalReports = 0,
+                        resolvedReports = 0
+                    )
+                }
+            }
+        }
+
+        // 5. Calculate live report statistics
+        userMap.values.map { student ->
+            val total = reportsList.count { r ->
+                r.userName.equals(student.name, ignoreCase = true) ||
+                (r.userId != null && r.userId == student.id)
+            }
+            val resolved = reportsList.count { r ->
+                (r.userName.equals(student.name, ignoreCase = true) ||
+                 (r.userId != null && r.userId == student.id)) &&
+                r.status.equals("Completed", ignoreCase = true)
+            }
+            student.copy(totalReports = total, resolvedReports = resolved)
+        }.sortedWith(
+            compareByDescending<StudentReporter> { it.email.equals(SessionPreferences.SUPER_ADMIN_EMAIL, ignoreCase = true) }
+                .thenByDescending { it.totalReports }
+        )
+    }
 
     val adminNotifications = remember(reportsList, readAdminNotifIds, isIndonesian) {
         val list = mutableListOf<AdminNotifItem>()
@@ -404,24 +499,44 @@ fun AdminDashboardTracScreen(
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
                             onAssignStaff = { staffId, reportId ->
+                                var newTasks = 0
                                 staffList = staffList.map {
-                                    if (it.id == staffId) it.copy(activeTasks = it.activeTasks + 1) else it
+                                    if (it.id == staffId) {
+                                        newTasks = it.activeTasks + 1
+                                        it.copy(activeTasks = newTasks)
+                                    } else it
                                 }
                                 sessionPrefs.saveStaffList(staffList)
+                                coroutineScope.launch {
+                                    reportRepo.updateStaffActiveTasks(staffId, newTasks)
+                                }
                             },
                             onAddStaff = { newStaff ->
                                 staffList = staffList + newStaff
                                 sessionPrefs.saveStaffList(staffList)
+                                coroutineScope.launch {
+                                    reportRepo.addStaff(newStaff)
+                                }
                             },
                             onDeleteStaff = { staffId ->
                                 staffList = staffList.filterNot { it.id == staffId }
                                 sessionPrefs.saveStaffList(staffList)
+                                coroutineScope.launch {
+                                    reportRepo.deleteStaff(staffId)
+                                }
                             },
                             onToggleStaffAvailability = { staffId ->
+                                var newAvail = true
                                 staffList = staffList.map {
-                                    if (it.id == staffId) it.copy(isAvailable = !it.isAvailable) else it
+                                    if (it.id == staffId) {
+                                        newAvail = !it.isAvailable
+                                        it.copy(isAvailable = newAvail)
+                                    } else it
                                 }
                                 sessionPrefs.saveStaffList(staffList)
+                                coroutineScope.launch {
+                                    reportRepo.updateStaffAvailability(staffId, newAvail)
+                                }
                             }
                         )
                     }
@@ -430,7 +545,7 @@ fun AdminDashboardTracScreen(
                         AdminUsersPelaporView(
                             students = studentReporters,
                             isSuperAdmin = isSuperAdmin,
-                            adminEmails = adminEmails,
+                            adminEmails = currentAdminEmails,
                             isIndonesian = isIndonesian,
                             isDarkMode = isDarkMode,
                             cardBg = cardBg,
@@ -438,6 +553,17 @@ fun AdminDashboardTracScreen(
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
                             onToggleAdmin = { email, makeAdmin ->
+                                val clean = email.trim().lowercase()
+                                val affectedEmails = if (clean.contains("rayya")) {
+                                    setOf(clean, "rayya@gmail.com", "rayyahanifah@gmail.com", "rayyahanifahh@gmail.com")
+                                } else {
+                                    setOf(clean)
+                                }
+                                currentAdminEmails = if (makeAdmin) {
+                                    HashSet(currentAdminEmails + affectedEmails)
+                                } else {
+                                    HashSet(currentAdminEmails - affectedEmails)
+                                }
                                 onToggleUserAdminRole(email, makeAdmin)
                             }
                         )
@@ -454,7 +580,7 @@ fun AdminDashboardTracScreen(
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
                             onAddRoomToFloor = { floorName, roomName ->
-                                facilityLocations = facilityLocations.map { loc ->
+                                val updated = facilityLocations.map { loc ->
                                     if (loc.floorName.equals(floorName, ignoreCase = true) && !loc.rooms.contains(roomName)) {
                                         loc.copy(
                                             rooms = loc.rooms + roomName,
@@ -462,15 +588,26 @@ fun AdminDashboardTracScreen(
                                         )
                                     } else loc
                                 }
+                                facilityLocations = updated
+                                sessionPrefs.saveFacilityLocations(updated)
+                                val desc = facilityLocations.find { it.floorName.equals(floorName, ignoreCase = true) }?.floorDesc ?: ""
+                                coroutineScope.launch {
+                                    reportRepo.addRoomToFloor(floorName, roomName, desc)
+                                }
                             },
                             onDeleteRoomFromFloor = { floorName, roomName ->
-                                facilityLocations = facilityLocations.map { loc ->
+                                val updated = facilityLocations.map { loc ->
                                     if (loc.floorName.equals(floorName, ignoreCase = true)) {
                                         loc.copy(
                                             rooms = loc.rooms.filterNot { it.equals(roomName, ignoreCase = true) },
                                             roomCount = maxOf(0, loc.rooms.size - 1)
                                         )
                                     } else loc
+                                }
+                                facilityLocations = updated
+                                sessionPrefs.saveFacilityLocations(updated)
+                                coroutineScope.launch {
+                                    reportRepo.deleteRoomFromFloor(floorName, roomName)
                                 }
                             }
                         )
@@ -486,12 +623,19 @@ fun AdminDashboardTracScreen(
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
                             onMarkAllRead = {
-                                sessionPrefs.markAllAdminNotificationsAsRead(adminNotifications.map { it.id })
-                                readAdminNotifIds = sessionPrefs.getReadAdminNotificationIds()
+                                val notifIds = adminNotifications.map { it.id }
+                                sessionPrefs.markAllAdminNotificationsAsRead(notifIds)
+                                readAdminNotifIds = HashSet(sessionPrefs.getReadAdminNotificationIds())
+                                coroutineScope.launch {
+                                    reportRepo.markAllNotificationsAsReadInDb(notifIds)
+                                }
                             },
                             onNotificationClick = { notif ->
                                 sessionPrefs.markAdminNotificationAsRead(notif.id)
-                                readAdminNotifIds = sessionPrefs.getReadAdminNotificationIds()
+                                readAdminNotifIds = HashSet(sessionPrefs.getReadAdminNotificationIds())
+                                coroutineScope.launch {
+                                    reportRepo.markNotificationAsReadInDb(notif.id, notif.title, notif.desc)
+                                }
                                 val matchedReport = reportsList.find { it.id == notif.reportId }
                                 if (matchedReport != null) {
                                     selectedReport = matchedReport
@@ -2372,7 +2516,7 @@ private fun AdminUsersPelaporView(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            items(filteredStudents, key = { it.id }) { student ->
+            items(filteredStudents, key = { it.email.trim().lowercase() }) { student ->
                 val cleanEmail = student.email.trim().lowercase()
                 val isUserSuperAdmin = cleanEmail == SessionPreferences.SUPER_ADMIN_EMAIL
                 val isUserAdmin = isUserSuperAdmin || adminEmails.contains(cleanEmail)

@@ -47,6 +47,7 @@ import com.example.trac.components.ProfileSidebarDrawer
 import com.example.trac.components.SidebarMenuItem
 import com.example.trac.components.TracBottomNavBar
 import com.example.trac.data.ReportData
+import com.example.trac.data.ReportRepository
 import com.example.trac.data.SessionPreferences
 import com.example.trac.viewmodel.AuthUiState
 import com.example.trac.viewmodel.AuthViewModel
@@ -109,6 +110,7 @@ fun TRACApp(
 ) {
     val context = LocalContext.current
     val sessionPrefs = remember { SessionPreferences(context) }
+    val reportRepo = remember { ReportRepository() }
 
     // 1. Check persistent local login session ("cookies") on app launch
     val isAlreadyLoggedIn = remember { authViewModel.isUserLoggedIn() }
@@ -153,6 +155,20 @@ fun TRACApp(
     val authState by authViewModel.uiState.collectAsState()
     val reportUiState by reportViewModel.uiState.collectAsState()
     val liveReportsList by reportViewModel.reports.collectAsState()
+    val adminEmails by authViewModel.adminEmailsState.collectAsState()
+    val registeredUsers by authViewModel.registeredUsersState.collectAsState()
+
+    val handleLogout: () -> Unit = {
+        isSidebarOpen = false
+        bannerErrorMessage = null
+        authViewModel.logout()
+        loggedInUserName = ""
+        loggedInUserClass = ""
+        loggedInProfileImage = ""
+        loggedInUserRole = "Siswa"
+        isUserAdmin = false
+        currentScreen = Screen.SPLASH
+    }
 
     // 2. System Back Gesture & Back Button Handling
     BackHandler(enabled = true) {
@@ -218,6 +234,7 @@ fun TRACApp(
 
             is AuthUiState.Error -> {
                 bannerErrorMessage = state.message
+                Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
             }
 
             else -> {}
@@ -242,10 +259,47 @@ fun TRACApp(
         }
     }
 
-    // Auto-fetch fresh reports from Supabase whenever user opens Home or Report List
+    // Auto-fetch fresh reports and users from Supabase whenever user opens Home, Report List, or Admin Dashboard
     LaunchedEffect(currentScreen) {
-        if (currentScreen == Screen.HOME || currentScreen == Screen.REPORT_LIST) {
+        if (currentScreen == Screen.HOME || currentScreen == Screen.REPORT_LIST || currentScreen == Screen.NOTIFICATIONS) {
             reportViewModel.fetchReports()
+            authViewModel.syncCurrentUserRole { role, isAdmin ->
+                loggedInUserRole = role
+                isUserAdmin = isAdmin
+            }
+            reportRepo.getReadNotificationIds().onSuccess { readIds ->
+                if (readIds.isNotEmpty()) {
+                    sessionPrefs.markAllNotificationsAsRead(readIds)
+                    sessionPrefs.markAllAdminNotificationsAsRead(readIds)
+                }
+            }
+            reportRepo.getFacilityLocations().onSuccess { locs ->
+                if (locs.isNotEmpty()) sessionPrefs.saveFacilityLocations(locs)
+            }
+            reportRepo.getStaffList().onSuccess { staff ->
+                if (staff.isNotEmpty()) sessionPrefs.saveStaffList(staff)
+            }
+        }
+        if (currentScreen == Screen.ADMIN_DASHBOARD) {
+            authViewModel.syncCurrentUserRole { role, isAdmin ->
+                loggedInUserRole = role
+                isUserAdmin = isAdmin
+            }
+            authViewModel.loadRegisteredUsers()
+            authViewModel.refreshAdminEmails()
+            reportViewModel.fetchReports()
+            reportRepo.getReadNotificationIds().onSuccess { readIds ->
+                if (readIds.isNotEmpty()) {
+                    sessionPrefs.markAllNotificationsAsRead(readIds)
+                    sessionPrefs.markAllAdminNotificationsAsRead(readIds)
+                }
+            }
+            reportRepo.getFacilityLocations().onSuccess { locs ->
+                if (locs.isNotEmpty()) sessionPrefs.saveFacilityLocations(locs)
+            }
+            reportRepo.getStaffList().onSuccess { staff ->
+                if (staff.isNotEmpty()) sessionPrefs.saveStaffList(staff)
+            }
         }
     }
 
@@ -309,10 +363,12 @@ fun TRACApp(
                         SplashTracScreen(
                             onLoginClick = {
                                 bannerErrorMessage = null
+                                authViewModel.resetState()
                                 currentScreen = Screen.LOGIN
                             },
                             onRegisterClick = {
                                 bannerErrorMessage = null
+                                authViewModel.resetState()
                                 currentScreen = Screen.REGISTER
                             }
                         )
@@ -398,6 +454,10 @@ fun TRACApp(
                                 currentScreen = Screen.NOTIFICATIONS
                             },
                             onLogoutClick = {
+                                authViewModel.syncCurrentUserRole { role, isAdmin ->
+                                    loggedInUserRole = role
+                                    isUserAdmin = isAdmin
+                                }
                                 isSidebarOpen = true
                             }
                         )
@@ -507,7 +567,11 @@ fun TRACApp(
                         EditIdentityTracScreen(
                             currentName = loggedInUserName,
                             currentClass = loggedInUserClass,
-                            currentRole = "Siswa / Pelapor",
+                            currentRole = if (isUserAdmin) {
+                                if (isIndonesianLanguage) "Pengurus / Admin" else "Administrator"
+                            } else {
+                                if (isIndonesianLanguage) "Siswa / Pelapor" else "Student / Reporter"
+                            },
                             currentProfileImage = loggedInProfileImage,
                             isLoading = authState is AuthUiState.Loading,
                             isIndonesian = isIndonesianLanguage,
@@ -570,10 +634,7 @@ fun TRACApp(
                                     Toast.LENGTH_SHORT
                                 ).show()
                             },
-                            onLogoutClick = {
-                                authViewModel.logout()
-                                currentScreen = Screen.SPLASH
-                            }
+                            onLogoutClick = handleLogout
                         )
                     }
 
@@ -582,10 +643,11 @@ fun TRACApp(
                             adminName = loggedInUserName,
                             adminEmail = authViewModel.getLoggedInUserEmail(),
                             isSuperAdmin = authViewModel.isSuperAdmin(),
-                            adminEmails = authViewModel.getAdminEmails(),
+                            adminEmails = adminEmails,
                             isIndonesian = isIndonesianLanguage,
                             isDarkMode = isAppDarkMode,
                             reportsList = liveReportsList,
+                            registeredUsers = registeredUsers,
                             selectedReportInitial = selectedReport,
                             onBackToUserModeClick = {
                                 currentScreen = Screen.HOME
@@ -605,22 +667,28 @@ fun TRACApp(
                             },
                             onToggleUserAdminRole = { targetEmail, makeAdmin ->
                                 if (makeAdmin) {
-                                    authViewModel.promoteUserToAdmin(targetEmail)
+                                    authViewModel.promoteUserToAdmin(targetEmail) {
+                                        isUserAdmin = authViewModel.isUserAdmin()
+                                        loggedInUserRole = authViewModel.getLoggedInUserRole()
+                                        authViewModel.refreshAdminEmails()
+                                    }
                                     Toast.makeText(
                                         context,
                                         if (isIndonesianLanguage) "$targetEmail berhasil dijadikan Admin" else "$targetEmail promoted to Admin",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 } else {
-                                    authViewModel.demoteAdminToUser(targetEmail)
+                                    authViewModel.demoteAdminToUser(targetEmail) {
+                                        isUserAdmin = authViewModel.isUserAdmin()
+                                        loggedInUserRole = authViewModel.getLoggedInUserRole()
+                                        authViewModel.refreshAdminEmails()
+                                    }
                                     Toast.makeText(
                                         context,
                                         if (isIndonesianLanguage) "Hak Admin $targetEmail dicabut" else "Admin role revoked from $targetEmail",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
-                                isUserAdmin = authViewModel.isUserAdmin()
-                                loggedInUserRole = authViewModel.getLoggedInUserRole()
                             }
                         )
                     }
@@ -647,6 +715,10 @@ fun TRACApp(
                         currentScreen = Screen.CREATE_REPORT
                     },
                     onProfileClick = {
+                        authViewModel.syncCurrentUserRole { role, isAdmin ->
+                            loggedInUserRole = role
+                            isUserAdmin = isAdmin
+                        }
                         isSidebarOpen = true
                     },
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -681,10 +753,7 @@ fun TRACApp(
                         SidebarMenuItem.SETTINGS -> currentScreen = Screen.SETTINGS
                     }
                 },
-                onLogoutClick = {
-                    authViewModel.logout()
-                    currentScreen = Screen.SPLASH
-                }
+                onLogoutClick = handleLogout
             )
         }
     }

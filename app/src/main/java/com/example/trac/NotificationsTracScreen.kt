@@ -34,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,6 +55,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.trac.data.ReportData
+import com.example.trac.data.ReportRepository
 import com.example.trac.data.SessionPreferences
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -89,7 +91,18 @@ fun NotificationsTracScreen(
     val isPreview = LocalInspectionMode.current
     val context = LocalContext.current
     val sessionPrefs = remember { SessionPreferences(context) }
-    var readNotificationIds by remember { mutableStateOf(sessionPrefs.getReadNotificationIds()) }
+    val reportRepo = remember { ReportRepository() }
+    val coroutineScope = rememberCoroutineScope()
+    var readNotificationIds by remember { mutableStateOf(HashSet(sessionPrefs.getReadNotificationIds())) }
+
+    LaunchedEffect(Unit) {
+        reportRepo.getReadNotificationIds().onSuccess { remoteReadIds ->
+            if (remoteReadIds.isNotEmpty()) {
+                sessionPrefs.markAllNotificationsAsRead(remoteReadIds)
+                readNotificationIds = HashSet(sessionPrefs.getReadNotificationIds())
+            }
+        }
+    }
 
     // Dynamic Theme Colors
     val pageBg = if (isDarkMode) Color(0xFF0F172A) else Color(0xFFF8FAFD)
@@ -261,8 +274,12 @@ fun NotificationsTracScreen(
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF2563EB),
                     modifier = Modifier.clickable {
-                        sessionPrefs.markAllNotificationsAsRead(notifications.map { it.id })
-                        readNotificationIds = sessionPrefs.getReadNotificationIds()
+                        val allIds = notifications.map { it.id }
+                        sessionPrefs.markAllNotificationsAsRead(allIds)
+                        readNotificationIds = HashSet(sessionPrefs.getReadNotificationIds())
+                        coroutineScope.launch {
+                            reportRepo.markAllNotificationsAsReadInDb(allIds)
+                        }
                     }
                 )
             }
@@ -355,7 +372,10 @@ fun NotificationsTracScreen(
                             textSecondary = textSecondary,
                             onClick = {
                                 sessionPrefs.markNotificationAsRead(item.id)
-                                readNotificationIds = sessionPrefs.getReadNotificationIds()
+                                readNotificationIds = HashSet(sessionPrefs.getReadNotificationIds())
+                                coroutineScope.launch {
+                                    reportRepo.markNotificationAsReadInDb(item.id, item.title, item.description)
+                                }
                                 onNotificationItemClick(item)
                             }
                         )

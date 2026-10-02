@@ -80,6 +80,12 @@ class SessionPreferences(context: Context) {
         prefs.edit().putStringSet(KEY_ADMIN_EMAILS, current).apply()
     }
 
+    fun setAdminEmails(emails: Set<String>) {
+        val clean = emails.map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+        prefs.edit().putStringSet(KEY_ADMIN_EMAILS, clean).apply()
+    }
+    
+
     fun getProfileImage(): String = prefs.getString(KEY_PROFILE_IMAGE, "") ?: ""
 
     fun updateUserProfile(fullName: String, userClass: String, profileImage: String? = null) {
@@ -106,19 +112,66 @@ class SessionPreferences(context: Context) {
     }
 
     fun getStaffList(): List<StaffMember> {
+        val isCustomized = prefs.getBoolean(KEY_STAFF_CUSTOMIZED, false)
         val raw = prefs.getString(KEY_STAFF_MEMBERS_JSON, null)
-        if (!raw.isNullOrBlank()) {
+        if (raw != null) {
             runCatching {
                 return Json.decodeFromString<List<StaffMember>>(raw)
             }
         }
-        return defaultStaffList
+        return if (isCustomized) emptyList() else defaultStaffList
     }
 
     fun saveStaffList(list: List<StaffMember>) {
         runCatching {
             val json = Json.encodeToString(list)
-            prefs.edit().putString(KEY_STAFF_MEMBERS_JSON, json).apply()
+            prefs.edit()
+                .putString(KEY_STAFF_MEMBERS_JSON, json)
+                .putBoolean(KEY_STAFF_CUSTOMIZED, true)
+                .apply()
+        }
+    }
+
+    fun getFacilityLocations(): List<FacilityLocation> {
+        val raw = prefs.getString(KEY_FACILITY_LOCATIONS_JSON, null)
+        if (!raw.isNullOrBlank()) {
+            runCatching {
+                return Json.decodeFromString<List<FacilityLocation>>(raw)
+            }
+        }
+        return SchoolFacilityMasterData.defaultLocations
+    }
+
+    fun saveFacilityLocations(list: List<FacilityLocation>) {
+        runCatching {
+            val json = Json.encodeToString(list)
+            prefs.edit()
+                .putString(KEY_FACILITY_LOCATIONS_JSON, json)
+                .putBoolean(KEY_FACILITY_LOCATIONS_CUSTOMIZED, true)
+                .apply()
+        }
+    }
+
+    fun getRegisteredUsers(): List<UserProfileData> {
+        val raw = prefs.getString(KEY_REGISTERED_USERS_JSON, null)
+        if (!raw.isNullOrBlank()) {
+            runCatching {
+                return Json.decodeFromString<List<UserProfileData>>(raw)
+            }
+        }
+        return emptyList()
+    }
+
+    fun saveRegisteredUser(profile: UserProfileData) {
+        runCatching {
+            val current = getRegisteredUsers().toMutableList()
+            val index = current.indexOfFirst { it.email.equals(profile.email, ignoreCase = true) }
+            if (index >= 0) {
+                current[index] = profile
+            } else {
+                current.add(profile)
+            }
+            prefs.edit().putString(KEY_REGISTERED_USERS_JSON, Json.encodeToString(current)).apply()
         }
     }
 
@@ -127,13 +180,13 @@ class SessionPreferences(context: Context) {
     }
 
     fun markNotificationAsRead(id: String) {
-        val current = getReadNotificationIds().toMutableSet()
+        val current = HashSet(getReadNotificationIds())
         current.add(id)
         prefs.edit().putStringSet(KEY_READ_NOTIFICATION_IDS, current).apply()
     }
 
     fun markAllNotificationsAsRead(ids: Collection<String>) {
-        val current = getReadNotificationIds().toMutableSet()
+        val current = HashSet(getReadNotificationIds())
         current.addAll(ids)
         prefs.edit().putStringSet(KEY_READ_NOTIFICATION_IDS, current).apply()
     }
@@ -147,13 +200,13 @@ class SessionPreferences(context: Context) {
     }
 
     fun markAdminNotificationAsRead(id: String) {
-        val current = getReadAdminNotificationIds().toMutableSet()
+        val current = HashSet(getReadAdminNotificationIds())
         current.add(id)
         prefs.edit().putStringSet(KEY_READ_ADMIN_NOTIF_IDS, current).apply()
     }
 
     fun markAllAdminNotificationsAsRead(ids: Collection<String>) {
-        val current = getReadAdminNotificationIds().toMutableSet()
+        val current = HashSet(getReadAdminNotificationIds())
         current.addAll(ids)
         prefs.edit().putStringSet(KEY_READ_ADMIN_NOTIF_IDS, current).apply()
     }
@@ -202,7 +255,15 @@ class SessionPreferences(context: Context) {
     fun getUserId(): String = prefs.getString(KEY_USER_ID, "") ?: ""
 
     fun clearSession() {
-        prefs.edit().clear().apply()
+        prefs.edit()
+            .remove(KEY_IS_LOGGED_IN)
+            .remove(KEY_EMAIL)
+            .remove(KEY_FULL_NAME)
+            .remove(KEY_USER_ID)
+            .remove(KEY_USER_CLASS)
+            .remove(KEY_USER_ROLE)
+            .remove(KEY_PROFILE_IMAGE)
+            .apply()
     }
 
     companion object {
@@ -215,6 +276,10 @@ class SessionPreferences(context: Context) {
         private const val KEY_USER_ROLE = "key_user_role"
         private const val KEY_ADMIN_EMAILS = "key_admin_emails"
         private const val KEY_STAFF_MEMBERS_JSON = "key_staff_members_json"
+        private const val KEY_STAFF_CUSTOMIZED = "key_staff_customized"
+        private const val KEY_FACILITY_LOCATIONS_JSON = "key_facility_locations_json"
+        private const val KEY_FACILITY_LOCATIONS_CUSTOMIZED = "key_facility_locations_customized"
+        private const val KEY_REGISTERED_USERS_JSON = "key_registered_users_json"
         private const val KEY_READ_NOTIFICATION_IDS = "key_read_notification_ids"
         private const val KEY_READ_ADMIN_NOTIF_IDS = "key_read_admin_notif_ids"
         private const val KEY_PROFILE_IMAGE = "key_profile_image"

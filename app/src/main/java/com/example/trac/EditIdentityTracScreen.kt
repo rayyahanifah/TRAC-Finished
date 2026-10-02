@@ -69,8 +69,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.trac.util.ImageUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -270,12 +272,26 @@ fun EditIdentityTracScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Profile Avatar Circle
-                val avatarBitmap = remember(photoBitmap, photoUri, currentProfileImage) {
-                    when {
-                        photoBitmap != null -> photoBitmap
-                        photoUri != null -> ImageUtils.uriToBitmap(context, photoUri!!)
-                        currentProfileImage.isNotBlank() -> ImageUtils.base64ToBitmap(currentProfileImage)
-                        else -> null
+                var avatarBitmap by remember { mutableStateOf<Bitmap?>(photoBitmap) }
+                LaunchedEffect(photoBitmap, photoUri, currentProfileImage) {
+                    if (photoBitmap != null) {
+                        avatarBitmap = photoBitmap
+                    } else if (photoUri != null) {
+                        withContext(Dispatchers.IO) {
+                            val decoded = ImageUtils.uriToBitmap(context, photoUri!!)
+                            withContext(Dispatchers.Main) {
+                                avatarBitmap = decoded
+                            }
+                        }
+                    } else if (currentProfileImage.isNotBlank()) {
+                        withContext(Dispatchers.IO) {
+                            val decoded = ImageUtils.base64ToBitmap(currentProfileImage)
+                            withContext(Dispatchers.Main) {
+                                avatarBitmap = decoded
+                            }
+                        }
+                    } else {
+                        avatarBitmap = null
                     }
                 }
 
@@ -293,9 +309,10 @@ fun EditIdentityTracScreen(
                             .clip(CircleShape),
                         color = Color(0xFFEFF6FF)
                     ) {
-                        if (avatarBitmap != null) {
+                        val currentAvatar = avatarBitmap
+                        if (currentAvatar != null) {
                             Image(
-                                bitmap = avatarBitmap.asImageBitmap(),
+                                bitmap = currentAvatar.asImageBitmap(),
                                 contentDescription = "User Avatar",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()

@@ -72,9 +72,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.trac.components.InAppBanner
+import com.example.trac.data.SessionPreferences
 import com.example.trac.util.ImageUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class FloorLocationGroup(
     val floorName: String,
@@ -159,59 +162,21 @@ fun CreateReportTracScreen(
         "Lainnya (Kustom)"
     )
 
-    // Floor Grouped Room Locations Data
-    val locationGroups = listOf(
-        FloorLocationGroup(
-            floorName = "LANTAI 1",
-            rooms = listOf(
-                "Business Centre", "Ruang Tunggu OTM", "Tangga Ki Hajar", "XII RPL",
-                "Ruang Guru PKN", "XII BR 1", "XI ULW", "Lab UPW", "Lab RPL",
-                "Toilet BK", "Tangga UKS", "UKS", "Pos Satpam", "Parkiran Mobil",
-                "Parkiran Motor", "Ruang Ki Hajar Dewantara", "Ruang Tata Usaha",
-                "Ruang Seni Sastra", "Ruang BK", "Ruang Guru ULW", "Ruang Wakil Kepala Sekolah",
-                "Ruang Kepala Sekolah", "Area Lobby Sekolah", "Area Resepsionis", "Gudang",
-                "Kolam Ikan", "Taman", "Ruang Rapat Kecil", "Lab BD", "Ruang Seni",
-                "Ruang OSIS", "Ruang Audio", "Area Lapangan Utama", "Gazebo", "Lab BDP",
-                "Toilet Guru", "Toilet Perempuan", "Ruang Guru Pemasaran", "Tangga GYM",
-                "Gym", "Ruang Koperasi", "Lab PAI", "Mushola Nurul Iman", "Lapangan Badminton",
-                "Area Selasar Lantai 1", "Kantin", "Toilet Kantin", "Sanggar Pramuka"
+    val sessionPrefs = remember { SessionPreferences(context) }
+    val facilityLocations = remember { sessionPrefs.getFacilityLocations() }
+
+    // Floor Grouped Room Locations Data synced with Master Data & Admin settings
+    val locationGroups = remember(facilityLocations, isIndonesian) {
+        facilityLocations.map { loc ->
+            FloorLocationGroup(
+                floorName = loc.floorName,
+                rooms = loc.rooms
             )
-        ),
-        FloorLocationGroup(
-            floorName = "LANTAI 2",
-            rooms = listOf(
-                "XII AK 1", "XII AK 2", "XII AK 3", "Tangga Ki Hajar", "Ruang Guru AKL (A)",
-                "Lab Akuntansi", "Ruang Guru AKL(B)", "XI AK 1", "XI AK 2", "Toilet Laki-Laki",
-                "Tangga UKS", "Lab Bahasa", "Perpustakaan", "Ruang Guru Bahasa Indonesia",
-                "Tangga GYM", "XI AK 3", "Koperasi Lantai (Lama)", "XII BD", "Aula",
-                "Teras Aula", "Toilet Laki-Laki (Area Aula)", "Ruang Kedap Suara",
-                "Toilet Perempuan (Area Aula)", "Area Selasar Lantai 2"
-            )
-        ),
-        FloorLocationGroup(
-            floorName = "LANTAI 3",
-            rooms = listOf(
-                "XII MP 1", "XII MP 2", "Tangga Ki Hajar", "XI MP", "Mini Office", "Lab MP",
-                "XI Manlog", "XII BR 2", "Toilet. Guru", "Toilet Siswa Laki-Laki", "Toilet Perempuan",
-                "Tangga UKS", "XII ULW", "Lab Manlog", "Ruang Guru MTK", "XI BD", "Tangga GYM",
-                "XI BR 1", "XI BR 2", "Ruang Guru B. Inggris", "Ruang Kewirausahaan PKK",
-                "Teras PKK", "Area Selasar Lantai 3"
-            )
-        ),
-        FloorLocationGroup(
-            floorName = "LANTAI 4",
-            rooms = listOf(
-                "X AKL 1", "X AKL 2", "Tangga Ki Hajar", "X AKL 3", "Ruang Rokhris", "X MP",
-                "X Manlog", "Ruang Guru IPAS", "Toilet Guru", "Toilet Siswa Cewe", "Tangga UKS",
-                "X ULW", "Ruang Simulator", "X BD", "Gudang Rokhris", "X RPL", "XI RPL",
-                "Area Selasar Lantai 4"
-            )
-        ),
-        FloorLocationGroup(
-            floorName = "LAINNYA",
-            rooms = listOf("Lainnya (Kustom)")
+        } + FloorLocationGroup(
+            floorName = if (isIndonesian) "LAINNYA" else "OTHER",
+            rooms = listOf(if (isIndonesian) "Lainnya (Kustom)" else "Other (Custom)")
         )
-    )
+    }
 
     val finalCategory = if (selectedCategory == "Lainnya (Kustom)") customCategory else selectedCategory
     val finalLocation = if (selectedLocation == "Lainnya (Kustom)") customLocation else selectedLocation
@@ -639,15 +604,24 @@ fun CreateReportTracScreen(
                         }
                     }
 
-                    val previewBitmap = remember(photoBitmap, photoUri) {
-                        when {
-                            photoBitmap != null -> photoBitmap
-                            photoUri != null -> ImageUtils.uriToBitmap(context, photoUri!!)
-                            else -> null
+                    var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+                    LaunchedEffect(photoBitmap, photoUri) {
+                        if (photoBitmap != null) {
+                            previewBitmap = photoBitmap
+                        } else if (photoUri != null) {
+                            withContext(Dispatchers.IO) {
+                                val decoded = ImageUtils.uriToBitmap(context, photoUri!!)
+                                withContext(Dispatchers.Main) {
+                                    previewBitmap = decoded
+                                }
+                            }
+                        } else {
+                            previewBitmap = null
                         }
                     }
 
-                    if (previewBitmap != null) {
+                    val currentPreview = previewBitmap
+                    if (currentPreview != null) {
                         Box(
                             modifier = Modifier.size(80.dp)
                         ) {
@@ -663,7 +637,7 @@ fun CreateReportTracScreen(
                                 color = Color(0xFFE2E8F0)
                             ) {
                                 Image(
-                                    bitmap = previewBitmap.asImageBitmap(),
+                                    bitmap = currentPreview.asImageBitmap(),
                                     contentDescription = "Report Photo",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()

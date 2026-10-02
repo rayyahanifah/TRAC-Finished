@@ -4,10 +4,14 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.trac.data.AuthRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 sealed interface AuthUiState {
     object Idle : AuthUiState
@@ -25,6 +29,7 @@ class AuthViewModel(
 ) : AndroidViewModel(application) {
 
     private val repository = AuthRepository(application.applicationContext)
+    private var authJob: Job? = null
 
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
@@ -43,12 +48,60 @@ class AuthViewModel(
 
     fun isSuperAdmin(): Boolean = repository.isSuperAdmin()
 
-    fun promoteUserToAdmin(email: String) {
-        repository.promoteUserToAdmin(email)
+    private val _adminEmailsState = MutableStateFlow<Set<String>>(repository.getAdminEmails())
+    val adminEmailsState: StateFlow<Set<String>> = _adminEmailsState.asStateFlow()
+
+    private val _registeredUsersState = MutableStateFlow<List<com.example.trac.data.UserProfileData>>(emptyList())
+    val registeredUsersState: StateFlow<List<com.example.trac.data.UserProfileData>> = _registeredUsersState.asStateFlow()
+
+    fun refreshAdminEmails() {
+        viewModelScope.launch {
+            repository.syncRemoteAdminEmails()
+            _adminEmailsState.value = repository.getAdminEmails()
+        }
     }
 
-    fun demoteAdminToUser(email: String) {
-        repository.demoteAdminToUser(email)
+    fun syncCurrentUserRole(onRoleUpdated: (String, Boolean) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val (role, isAdmin) = repository.syncCurrentUserRole()
+            _adminEmailsState.value = repository.getAdminEmails()
+            onRoleUpdated(role, isAdmin)
+        }
+    }
+
+    fun loadRegisteredUsers() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val users = repository.getRegisteredUsers()
+            withContext(Dispatchers.Main) {
+                _registeredUsersState.value = users
+            }
+        }
+    }
+
+    fun promoteUserToAdmin(email: String, onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.promoteUserToAdmin(email)
+            val updatedAdmins = repository.getAdminEmails()
+            val updatedUsers = repository.getRegisteredUsers()
+            withContext(Dispatchers.Main) {
+                _adminEmailsState.value = updatedAdmins
+                _registeredUsersState.value = updatedUsers
+                onComplete()
+            }
+        }
+    }
+
+    fun demoteAdminToUser(email: String, onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.demoteAdminToUser(email)
+            val updatedAdmins = repository.getAdminEmails()
+            val updatedUsers = repository.getRegisteredUsers()
+            withContext(Dispatchers.Main) {
+                _adminEmailsState.value = updatedAdmins
+                _registeredUsersState.value = updatedUsers
+                onComplete()
+            }
+        }
     }
 
     fun getAdminEmails(): Set<String> = repository.getAdminEmails()
@@ -100,7 +153,8 @@ class AuthViewModel(
             cleanEmail = "$cleanEmail@gmail.com"
         }
 
-        viewModelScope.launch {
+        authJob?.cancel()
+        authJob = viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = AuthUiState.Loading
             repository.signIn(cleanEmail, cleanPass)
                 .onSuccess {
@@ -172,10 +226,13 @@ class AuthViewModel(
     }
 
     fun logout() {
-        viewModelScope.launch {
-            _uiState.value = AuthUiState.Loading
-            repository.signOut()
-            _uiState.value = AuthUiState.Idle
+        authJob?.cancel()
+        _uiState.value = AuthUiState.Idle
+        authJob = viewModelScope.launch(Dispatchers.IO) {
+            repository.clearSessionLocal()
+            withTimeoutOrNull(2000) {
+                repository.signOutRemote()
+            }
         }
     }
 

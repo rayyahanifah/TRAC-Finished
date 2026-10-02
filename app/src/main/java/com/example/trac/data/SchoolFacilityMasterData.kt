@@ -1,6 +1,16 @@
 package com.example.trac.data
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+
+@Serializable
+data class FacilityLocationRow(
+    val id: String? = null,
+    @SerialName("floor_name") val floorName: String,
+    @SerialName("floor_desc") val floorDesc: String? = null,
+    @SerialName("room_name") val roomName: String,
+    @SerialName("is_active") val isActive: Boolean = true
+)
 
 @Serializable
 data class FacilityLocation(
