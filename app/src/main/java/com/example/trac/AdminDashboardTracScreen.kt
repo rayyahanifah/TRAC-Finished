@@ -78,6 +78,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import com.example.trac.components.ZoomableImageViewerDialog
 import com.example.trac.data.FacilityLocation
 import com.example.trac.data.ReportData
 import com.example.trac.data.ReportRepository
@@ -1100,6 +1101,8 @@ private fun AdminReportsListView(
     var reportToResolve by remember { mutableStateOf<ReportData?>(null) }
     var completionNotesInput by remember { mutableStateOf("") }
     var completionImageBase64 by remember { mutableStateOf<String?>(null) }
+    var zoomedImageBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var zoomedImageTitle by remember { mutableStateOf("Pratinjau Foto") }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -1260,7 +1263,11 @@ private fun AdminReportsListView(
                             completionNotesInput = report.completionNotes ?: ""
                             completionImageBase64 = report.completionImageUrl
                         },
-                        onOpenDetail = { onOpenDetail(report) }
+                        onOpenDetail = { onOpenDetail(report) },
+                        onPreviewPhoto = { bmp, title ->
+                            zoomedImageBitmap = bmp
+                            zoomedImageTitle = title
+                        }
                     )
                 }
             }
@@ -1371,6 +1378,15 @@ private fun AdminReportsListView(
             }
         )
     }
+
+    if (zoomedImageBitmap != null) {
+        ZoomableImageViewerDialog(
+            imageBitmap = zoomedImageBitmap,
+            title = zoomedImageTitle,
+            subtitle = null,
+            onDismiss = { zoomedImageBitmap = null }
+        )
+    }
 }
 
 // -------------------------------------------------------------
@@ -1417,6 +1433,8 @@ private fun AdminReportDetailView(
     var showCompletionDialog by remember { mutableStateOf(false) }
     var completionNotesInput by remember(report.id) { mutableStateOf(report.completionNotes ?: "") }
     var completionImageBase64 by remember(report.id) { mutableStateOf<String?>(report.completionImageUrl) }
+    var zoomedImageBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var zoomedImageTitle by remember { mutableStateOf("Pratinjau Foto") }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -1743,15 +1761,44 @@ private fun AdminReportDetailView(
                         ImageUtils.base64ToBitmap(report.imageUrl)
                     }
                     if (imageBitmap != null) {
-                        Image(
-                            bitmap = imageBitmap.asImageBitmap(),
-                            contentDescription = "Report Photo",
-                            contentScale = ContentScale.Crop,
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(180.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                        )
+                                .clickable {
+                                    zoomedImageBitmap = imageBitmap.asImageBitmap()
+                                    zoomedImageTitle = if (isIndonesian) "Foto Bukti Fasilitas (Sebelum)" else "Initial Evidence (Before)"
+                                }
+                        ) {
+                            Image(
+                                bitmap = imageBitmap.asImageBitmap(),
+                                contentDescription = "Report Photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xCC0F172A)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text("🔍", fontSize = 11.sp)
+                                    Text(
+                                        text = if (isIndonesian) "Ketuk untuk perbesar" else "Tap to zoom",
+                                        color = Color.White,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1774,15 +1821,44 @@ private fun AdminReportDetailView(
                             ImageUtils.base64ToBitmap(report.completionImageUrl)
                         }
                         if (completionBmp != null) {
-                            Image(
-                                bitmap = completionBmp.asImageBitmap(),
-                                contentDescription = "Completion Proof",
-                                contentScale = ContentScale.Crop,
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(180.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                            )
+                                    .clickable {
+                                        zoomedImageBitmap = completionBmp.asImageBitmap()
+                                        zoomedImageTitle = if (isIndonesian) "✨ Bukti Selesai Diperbaiki (After)" else "✨ Completion Proof (After)"
+                                    }
+                            ) {
+                                Image(
+                                    bitmap = completionBmp.asImageBitmap(),
+                                    contentDescription = "Completion Proof",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(8.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xCC0F172A)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text("🔍", fontSize = 11.sp)
+                                        Text(
+                                            text = if (isIndonesian) "Ketuk untuk perbesar" else "Tap to zoom",
+                                            color = Color.White,
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -1860,12 +1936,38 @@ private fun AdminReportDetailView(
                                     ImageUtils.base64ToBitmap(compImg)
                                 }
                                 if (bmp != null) {
-                                    Image(
-                                        bitmap = bmp.asImageBitmap(),
-                                        contentDescription = "Completion Proof",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
+                                    Box(modifier = Modifier.fillMaxSize()) {
+                                        Image(
+                                            bitmap = bmp.asImageBitmap(),
+                                            contentDescription = "Completion Proof",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                        Surface(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .padding(6.dp)
+                                                .clickable {
+                                                    zoomedImageBitmap = bmp.asImageBitmap()
+                                                    zoomedImageTitle = if (isIndonesian) "Foto Bukti Selesai" else "Completion Proof Photo"
+                                                },
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = Color(0xCC0F172A)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                Text("🔍", fontSize = 10.sp)
+                                                Text(
+                                                    text = if (isIndonesian) "Perbesar" else "Zoom",
+                                                    color = Color.White,
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             } else {
                                 Column(
@@ -1968,6 +2070,15 @@ private fun AdminReportDetailView(
                 }
             }
         }
+    }
+
+    if (zoomedImageBitmap != null) {
+        ZoomableImageViewerDialog(
+            imageBitmap = zoomedImageBitmap,
+            title = zoomedImageTitle,
+            subtitle = report.title,
+            onDismiss = { zoomedImageBitmap = null }
+        )
     }
 }
 
@@ -3414,7 +3525,8 @@ private fun AdminReportManageCard(
     textSecondary: Color,
     onUpdateStatus: (String) -> Unit,
     onOpenResolveDialog: () -> Unit,
-    onOpenDetail: () -> Unit
+    onOpenDetail: () -> Unit,
+    onPreviewPhoto: ((androidx.compose.ui.graphics.ImageBitmap, String) -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -3495,6 +3607,87 @@ private fun AdminReportManageCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                     )
+                }
+            }
+
+            // Attached Photos Preview Row (Before & After clickable thumbnails)
+            if (!report.imageUrl.isNullOrBlank() || !report.completionImageUrl.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (!report.imageUrl.isNullOrBlank()) {
+                        val beforeBmp = remember(report.imageUrl) {
+                            ImageUtils.base64ToBitmap(report.imageUrl)
+                        }
+                        if (beforeBmp != null) {
+                            Surface(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onPreviewPhoto?.invoke(
+                                            beforeBmp.asImageBitmap(),
+                                            if (isIndonesian) "Foto Bukti (Sebelum)" else "Initial Evidence (Before)"
+                                        )
+                                    },
+                                color = Color(0xFFE2E8F0)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    Image(
+                                        bitmap = beforeBmp.asImageBitmap(),
+                                        contentDescription = "Before Photo",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Surface(
+                                        modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp),
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xCC000000)
+                                    ) {
+                                        Text("🔍", fontSize = 8.sp, modifier = Modifier.padding(2.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (!report.completionImageUrl.isNullOrBlank()) {
+                        val afterBmp = remember(report.completionImageUrl) {
+                            ImageUtils.base64ToBitmap(report.completionImageUrl)
+                        }
+                        if (afterBmp != null) {
+                            Surface(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onPreviewPhoto?.invoke(
+                                            afterBmp.asImageBitmap(),
+                                            if (isIndonesian) "Foto Bukti Selesai (After)" else "Completion Proof (After)"
+                                        )
+                                    },
+                                color = Color(0xFFDCFCE7)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    Image(
+                                        bitmap = afterBmp.asImageBitmap(),
+                                        contentDescription = "After Photo",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Surface(
+                                        modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp),
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xCC000000)
+                                    ) {
+                                        Text("🔍", fontSize = 8.sp, modifier = Modifier.padding(2.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

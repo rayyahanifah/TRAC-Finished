@@ -68,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.trac.components.ZoomableImageViewerDialog
 import com.example.trac.util.ImageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -109,7 +110,9 @@ fun EditIdentityTracScreen(
 
     var photoBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var photoUri by remember { mutableStateOf<Uri?>(null) }
+    var avatarBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var showPhotoPickerSheet by remember { mutableStateOf(false) }
+    var showZoomedAvatar by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -272,7 +275,6 @@ fun EditIdentityTracScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Profile Avatar Circle
-                var avatarBitmap by remember { mutableStateOf<Bitmap?>(photoBitmap) }
                 LaunchedEffect(photoBitmap, photoUri, currentProfileImage) {
                     if (photoBitmap != null) {
                         avatarBitmap = photoBitmap
@@ -298,6 +300,7 @@ fun EditIdentityTracScreen(
                 Box(
                     modifier = Modifier.size(110.dp)
                 ) {
+                    val currentAvatar = avatarBitmap
                     Surface(
                         modifier = Modifier
                             .fillMaxSize()
@@ -306,17 +309,30 @@ fun EditIdentityTracScreen(
                                 shape = CircleShape,
                                 spotColor = Color(0x202563EB)
                             )
-                            .clip(CircleShape),
+                            .clip(CircleShape)
+                            .clickable(enabled = currentAvatar != null) {
+                                showZoomedAvatar = true
+                            },
                         color = Color(0xFFEFF6FF)
                     ) {
-                        val currentAvatar = avatarBitmap
                         if (currentAvatar != null) {
-                            Image(
-                                bitmap = currentAvatar.asImageBitmap(),
-                                contentDescription = "User Avatar",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Image(
+                                    bitmap = currentAvatar.asImageBitmap(),
+                                    contentDescription = "User Avatar",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = 6.dp),
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xAA000000)
+                                ) {
+                                    Text("🔍", fontSize = 8.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                }
+                            }
                         } else {
                             val initials = if (fullName.isNotBlank()) fullName.take(2).uppercase() else "RA"
                             Box(
@@ -729,6 +745,15 @@ fun EditIdentityTracScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+        }
+
+        if (showZoomedAvatar && avatarBitmap != null) {
+            ZoomableImageViewerDialog(
+                imageBitmap = avatarBitmap!!.asImageBitmap(),
+                title = if (isIndonesian) "Foto Profil" else "Profile Photo",
+                subtitle = fullName.ifBlank { null },
+                onDismiss = { showZoomedAvatar = false }
+            )
         }
     }
 }

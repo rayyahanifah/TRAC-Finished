@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.trac.components.ZoomableImageViewerDialog
 import com.example.trac.util.ImageUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -78,6 +79,7 @@ fun SettingsTracScreen(
 
     var isIndonesian by rememberSaveable { mutableStateOf(isIndonesianInitial) }
     var isDarkMode by rememberSaveable { mutableStateOf(isDarkModeInitial) }
+    var showZoomedAvatar by remember { mutableStateOf(false) }
     var currentRole by rememberSaveable { mutableStateOf(userRoleInitial) }
 
     // Dynamic Theme Colors
@@ -218,16 +220,28 @@ fun SettingsTracScreen(
                         Surface(
                             modifier = Modifier
                                 .size(50.dp)
-                                .clip(CircleShape),
+                                .clip(CircleShape)
+                                .clickable(enabled = profileBitmap != null) {
+                                    showZoomedAvatar = true
+                                },
                             color = Color(0xFFEFF6FF)
                         ) {
                             if (profileBitmap != null) {
-                                Image(
-                                    bitmap = profileBitmap.asImageBitmap(),
-                                    contentDescription = "User Avatar",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    Image(
+                                        bitmap = profileBitmap.asImageBitmap(),
+                                        contentDescription = "User Avatar",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Surface(
+                                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
+                                        shape = RoundedCornerShape(3.dp),
+                                        color = Color(0xAA000000)
+                                    ) {
+                                        Text("🔍", fontSize = 7.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp))
+                                    }
+                                }
                             } else {
                                 val initials = if (userName.isNotBlank()) userName.take(2).uppercase() else "RA"
                                 Box(
@@ -574,6 +588,15 @@ fun SettingsTracScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        }
+
+        if (showZoomedAvatar && userProfileImage.isNotBlank()) {
+            ZoomableImageViewerDialog(
+                base64Image = userProfileImage,
+                title = if (isIndonesian) "Foto Profil" else "Profile Photo",
+                subtitle = userName.ifBlank { null },
+                onDismiss = { showZoomedAvatar = false }
+            )
         }
     }
 }

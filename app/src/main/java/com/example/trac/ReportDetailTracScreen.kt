@@ -61,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.trac.components.ZoomableImageViewerDialog
 import com.example.trac.data.ReportData
 import com.example.trac.util.ImageUtils
 import kotlinx.coroutines.delay
@@ -122,6 +123,9 @@ fun ReportDetailTracScreen(
     var showCommentSheet by remember { mutableStateOf(false) }
     var newCommentText by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState()
+
+    var zoomedImageBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var zoomedImageTitle by remember { mutableStateOf("Pratinjau Foto") }
 
     // Entrance animation states
     val headerAlpha = remember { Animatable(if (isPreview) 1f else 0f) }
@@ -296,12 +300,42 @@ fun ReportDetailTracScreen(
                     }
 
                     if (reportImageBitmap != null) {
-                        Image(
-                            bitmap = reportImageBitmap.asImageBitmap(),
-                            contentDescription = "Facility Photo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable {
+                                    zoomedImageBitmap = reportImageBitmap.asImageBitmap()
+                                    zoomedImageTitle = if (isIndonesian) "Foto Fasilitas (Laporan)" else "Facility Photo (Report)"
+                                }
+                        ) {
+                            Image(
+                                bitmap = reportImageBitmap.asImageBitmap(),
+                                contentDescription = "Facility Photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xCC0F172A)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text("🔍", fontSize = 11.sp)
+                                    Text(
+                                        text = if (isIndonesian) "Ketuk untuk perbesar" else "Tap to zoom",
+                                        color = Color.White,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     } else {
                         ACFacilityPhotoIllustration()
                     }
@@ -535,25 +569,48 @@ fun ReportDetailTracScreen(
                                         color = textSecondary
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
+                                    val beforeBitmap = remember(reportData?.imageUrl) {
+                                        if (!reportData?.imageUrl.isNullOrBlank()) {
+                                            ImageUtils.base64ToBitmap(reportData.imageUrl)
+                                        } else null
+                                    }
                                     Surface(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(110.dp)
-                                            .clip(RoundedCornerShape(12.dp)),
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .then(
+                                                if (beforeBitmap != null) {
+                                                    Modifier.clickable {
+                                                        zoomedImageBitmap = beforeBitmap.asImageBitmap()
+                                                        zoomedImageTitle = if (isIndonesian) "Foto Sebelum (Laporan)" else "Before Photo (Report)"
+                                                    }
+                                                } else Modifier
+                                            ),
                                         color = Color(0xFFE2E8F0)
                                     ) {
-                                        val beforeBitmap = remember(reportData?.imageUrl) {
-                                            if (!reportData?.imageUrl.isNullOrBlank()) {
-                                                ImageUtils.base64ToBitmap(reportData.imageUrl)
-                                            } else null
-                                        }
                                         if (beforeBitmap != null) {
-                                            Image(
-                                                bitmap = beforeBitmap.asImageBitmap(),
-                                                contentDescription = "Before Photo",
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
+                                            Box(modifier = Modifier.fillMaxSize()) {
+                                                Image(
+                                                    bitmap = beforeBitmap.asImageBitmap(),
+                                                    contentDescription = "Before Photo",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(4.dp),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = Color(0xCC0F172A)
+                                                ) {
+                                                    Text(
+                                                        text = "🔍",
+                                                        fontSize = 9.sp,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
                                         } else {
                                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                                 Text(if (isIndonesian) "Foto Awal" else "Initial Photo", fontSize = 11.sp, color = textSecondary)
@@ -571,25 +628,48 @@ fun ReportDetailTracScreen(
                                         color = Color(0xFF059669)
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
+                                    val afterBitmap = remember(reportData?.completionImageUrl) {
+                                        if (!reportData?.completionImageUrl.isNullOrBlank()) {
+                                            ImageUtils.base64ToBitmap(reportData.completionImageUrl)
+                                        } else null
+                                    }
                                     Surface(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(110.dp)
-                                            .clip(RoundedCornerShape(12.dp)),
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .then(
+                                                if (afterBitmap != null) {
+                                                    Modifier.clickable {
+                                                        zoomedImageBitmap = afterBitmap.asImageBitmap()
+                                                        zoomedImageTitle = if (isIndonesian) "Foto Sesudah (Selesai)" else "After Photo (Completed)"
+                                                    }
+                                                } else Modifier
+                                            ),
                                         color = Color(0xFFDCFCE7)
                                     ) {
-                                        val afterBitmap = remember(reportData?.completionImageUrl) {
-                                            if (!reportData?.completionImageUrl.isNullOrBlank()) {
-                                                ImageUtils.base64ToBitmap(reportData.completionImageUrl)
-                                            } else null
-                                        }
                                         if (afterBitmap != null) {
-                                            Image(
-                                                bitmap = afterBitmap.asImageBitmap(),
-                                                contentDescription = "After Photo",
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
+                                            Box(modifier = Modifier.fillMaxSize()) {
+                                                Image(
+                                                    bitmap = afterBitmap.asImageBitmap(),
+                                                    contentDescription = "After Photo",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(4.dp),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = Color(0xCC0F172A)
+                                                ) {
+                                                    Text(
+                                                        text = "🔍",
+                                                        fontSize = 9.sp,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
                                         } else {
                                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                                 Text(if (isIndonesian) "✓ Terverifikasi Selesai" else "✓ Verified Complete", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF059669))
@@ -939,6 +1019,15 @@ fun ReportDetailTracScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+        }
+
+        if (zoomedImageBitmap != null) {
+            ZoomableImageViewerDialog(
+                imageBitmap = zoomedImageBitmap,
+                title = zoomedImageTitle,
+                subtitle = displayTitle,
+                onDismiss = { zoomedImageBitmap = null }
+            )
         }
     }
 }

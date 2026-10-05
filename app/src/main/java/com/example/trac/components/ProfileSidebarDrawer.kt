@@ -34,7 +34,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,6 +99,8 @@ fun ProfileSidebarDrawer(
     val textPrimary = if (isDarkMode) Color(0xFFF8FAFC) else Color(0xFF0F172A)
     val textSecondary = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
     val borderCol = if (isDarkMode) Color(0xFF334155) else Color(0xFFF1F5F9)
+
+    var showZoomedAvatar by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -300,16 +304,28 @@ fun ProfileSidebarDrawer(
                                     modifier = Modifier
                                         .size(42.dp)
                                         .shadow(elevation = 4.dp, shape = CircleShape, spotColor = Color(0x202563EB))
-                                        .clip(CircleShape),
+                                        .clip(CircleShape)
+                                        .clickable(enabled = profileBitmap != null) {
+                                            showZoomedAvatar = true
+                                        },
                                     color = if (isAdmin) Color(0xFFEEF2FF) else Color(0xFFEFF6FF)
                                 ) {
                                     if (profileBitmap != null) {
-                                        Image(
-                                            bitmap = profileBitmap.asImageBitmap(),
-                                            contentDescription = "User Avatar",
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            Image(
+                                                bitmap = profileBitmap.asImageBitmap(),
+                                                contentDescription = "User Avatar",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                            Surface(
+                                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
+                                                shape = RoundedCornerShape(3.dp),
+                                                color = Color(0xAA000000)
+                                            ) {
+                                                Text("🔍", fontSize = 7.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp))
+                                            }
+                                        }
                                     } else {
                                         val initials = if (userName.isNotBlank()) {
                                             userName.take(2).uppercase()
@@ -460,6 +476,15 @@ fun ProfileSidebarDrawer(
                     }
                 }
             }
+        }
+
+        if (showZoomedAvatar && userProfileImage.isNotBlank()) {
+            ZoomableImageViewerDialog(
+                base64Image = userProfileImage,
+                title = if (isIndonesian) "Foto Profil" else "Profile Photo",
+                subtitle = userName.ifBlank { null },
+                onDismiss = { showZoomedAvatar = false }
+            )
         }
     }
 }

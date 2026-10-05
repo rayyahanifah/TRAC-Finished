@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.trac.components.InAppBanner
+import com.example.trac.components.ZoomableImageViewerDialog
 import com.example.trac.data.SessionPreferences
 import com.example.trac.util.ImageUtils
 import kotlinx.coroutines.Dispatchers
@@ -101,6 +102,8 @@ fun CreateReportTracScreen(
     val isPreview = LocalInspectionMode.current
     val coroutineScope = rememberCoroutineScope()
     var isEncodingImage by remember { mutableStateOf(false) }
+    var zoomedImageBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var zoomedImageTitle by remember { mutableStateOf("Pratinjau Foto") }
 
     // Dynamic Theme Colors
     val pageBg = if (isDarkMode) Color(0xFF0F172A) else Color(0xFFF8FAFD)
@@ -633,15 +636,30 @@ fun CreateReportTracScreen(
                                         shape = RoundedCornerShape(16.dp),
                                         spotColor = Color(0x10000000)
                                     )
-                                    .clip(RoundedCornerShape(16.dp)),
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable {
+                                        zoomedImageBitmap = currentPreview.asImageBitmap()
+                                        zoomedImageTitle = if (isIndonesian) "Foto Bukti Kerusakan" else "Damage Proof Photo"
+                                    },
                                 color = Color(0xFFE2E8F0)
                             ) {
-                                Image(
-                                    bitmap = currentPreview.asImageBitmap(),
-                                    contentDescription = "Report Photo",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    Image(
+                                        bitmap = currentPreview.asImageBitmap(),
+                                        contentDescription = "Report Photo",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Surface(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(4.dp),
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xCC000000)
+                                    ) {
+                                        Text("🔍", fontSize = 8.sp, modifier = Modifier.padding(2.dp))
+                                    }
+                                }
                             }
 
                             Box(
@@ -946,6 +964,15 @@ fun CreateReportTracScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+        }
+
+        if (zoomedImageBitmap != null) {
+            ZoomableImageViewerDialog(
+                imageBitmap = zoomedImageBitmap,
+                title = zoomedImageTitle,
+                subtitle = reportTitle.ifBlank { null },
+                onDismiss = { zoomedImageBitmap = null }
+            )
         }
     }
 }

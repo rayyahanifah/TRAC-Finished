@@ -29,7 +29,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +56,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.asImageBitmap
+import com.example.trac.components.ZoomableImageViewerDialog
 import com.example.trac.data.ReportData
 import com.example.trac.util.ImageUtils
 import kotlinx.coroutines.delay
@@ -75,6 +79,7 @@ fun HomeTracScreen(
     onLogoutClick: () -> Unit = {}
 ) {
     val isPreview = LocalInspectionMode.current
+    var showZoomedAvatar by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         onRefreshReports()
@@ -215,16 +220,28 @@ fun HomeTracScreen(
                         modifier = Modifier
                             .size(46.dp)
                             .shadow(elevation = 4.dp, shape = CircleShape, spotColor = Color(0x202563EB))
-                            .clip(CircleShape),
+                            .clip(CircleShape)
+                            .clickable(enabled = profileBitmap != null) {
+                                showZoomedAvatar = true
+                            },
                         color = Color(0xFFE0ECFF)
                     ) {
                         if (profileBitmap != null) {
-                            Image(
-                                bitmap = profileBitmap.asImageBitmap(),
-                                contentDescription = "User Profile Photo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Image(
+                                    bitmap = profileBitmap.asImageBitmap(),
+                                    contentDescription = "User Profile Photo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Surface(
+                                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
+                                    shape = RoundedCornerShape(3.dp),
+                                    color = Color(0xAA000000)
+                                ) {
+                                    Text("🔍", fontSize = 7.sp, modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp))
+                                }
+                            }
                         } else {
                             val initials = if (userName.isNotBlank()) {
                                 userName.take(2).uppercase()
@@ -528,6 +545,15 @@ fun HomeTracScreen(
             }
 
             Spacer(modifier = Modifier.height(84.dp))
+        }
+
+        if (showZoomedAvatar && userProfileImage.isNotBlank()) {
+            ZoomableImageViewerDialog(
+                base64Image = userProfileImage,
+                title = if (isIndonesian) "Foto Profil" else "Profile Photo",
+                subtitle = userName.ifBlank { null },
+                onDismiss = { showZoomedAvatar = false }
+            )
         }
     }
 }
